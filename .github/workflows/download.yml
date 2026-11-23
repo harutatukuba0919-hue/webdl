@@ -1,0 +1,56 @@
+name: Download with yt-dlp
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: HTTP(S) video or playlist URL
+        required: true
+        type: string
+      format:
+        description: Output format
+        required: true
+        type: choice
+        options:
+          - mp4
+          - webm
+          - mp3
+          - m4a
+
+permissions:
+  contents: read
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y ffmpeg
+
+      - name: Install yt-dlp
+        run: python -m pip install -r requirements.txt
+
+      - name: Download media
+        env:
+          VIDEO_URL: ${{ inputs.url }}
+          OUTPUT_FORMAT: ${{ inputs.format }}
+        run: python scripts/download.py --url "$VIDEO_URL" --format "$OUTPUT_FORMAT"
+
+      - name: Upload downloaded files
+        uses: actions/upload-artifact@v4
+        with:
+          name: webdl-download
+          path: output/
+          if-no-files-found: error
+          compression-level: 0

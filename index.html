@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#111827">
+    <title>WebDL - 動画ダウンロード</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #111827;
+        color: #f3f4f6;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        padding: 32px 16px;
+        background: radial-gradient(ellipse at top, #263449 0, #111827 58%);
+      }
+
+      main {
+        width: min(100%, 620px);
+        padding: clamp(24px, 6vw, 42px);
+        border: 1px solid #374151;
+        border-radius: 20px;
+        background: #182232;
+        box-shadow: 0 24px 70px #0005;
+      }
+
+      h1 { margin: 0 0 8px; font-size: clamp(1.7rem, 5vw, 2.2rem); }
+      .intro, .note { color: #b7c3d4; line-height: 1.65; }
+      form { display: grid; gap: 18px; margin-top: 28px; }
+      label { display: grid; gap: 8px; font-weight: 650; }
+
+      input, select, button, .action-link {
+        min-height: 48px;
+        border: 1px solid #526176;
+        border-radius: 10px;
+        font: inherit;
+      }
+
+      input, select {
+        width: 100%;
+        padding: 10px 12px;
+        background: #101827;
+        color: #f3f4f6;
+      }
+
+      button, .action-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 11px 16px;
+        background: #f97316;
+        color: #1b120c;
+        border: 0;
+        font-weight: 750;
+        text-decoration: none;
+        cursor: pointer;
+      }
+
+      button:hover, .action-link:hover { background: #fb923c; }
+      button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+        outline: 3px solid #fdba74;
+        outline-offset: 3px;
+      }
+
+      .result {
+        display: grid;
+        gap: 12px;
+        margin-top: 22px;
+      }
+
+      .result[hidden] { display: none; }
+      .command {
+        overflow-wrap: anywhere;
+        padding: 14px;
+        border: 1px solid #374151;
+        border-radius: 10px;
+        background: #0b1220;
+        color: #d1d5db;
+        font: 0.9rem/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
+      }
+
+      .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+      .actions button { background: #374151; color: #f3f4f6; }
+      .actions button:hover { background: #4b5563; }
+      .action-link { background: #f97316; }
+      .note { margin: 24px 0 0; font-size: 0.9rem; }
+      .status { min-height: 1.4em; margin: 0; color: #fdba74; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>WebDL</h1>
+      <p class="intro">URLと形式を指定して、GitHub Actionsでyt-dlpを実行します。プレイリストは名前付きのZIPにまとめます。</p>
+
+      <form id="download-form">
+        <label for="url">動画またはプレイリストのURL
+          <input id="url" name="url" type="url" placeholder="https://example.com/..." required>
+        </label>
+        <label for="format">保存形式
+          <select id="format" name="format">
+            <option value="mp4">MP4（動画）</option>
+            <option value="webm">WebM（動画）</option>
+            <option value="mp3">MP3（音声）</option>
+            <option value="m4a">M4A（音声）</option>
+          </select>
+        </label>
+        <button type="submit">起動手順を作成</button>
+      </form>
+
+      <section id="result" class="result" aria-live="polite" hidden>
+        <p class="note">次のコマンドを、GitHub CLIで認証済みのターミナルに貼り付けて実行してください。またはActions画面で同じURLと形式を入力して実行できます。</p>
+        <code id="command" class="command"></code>
+        <div class="actions">
+          <button id="copy" type="button">コマンドをコピー</button>
+          <a class="action-link" href="https://github.com/harutatukuba0919-hue/webdl/actions/workflows/download.yml" target="_blank" rel="noopener noreferrer">Actions画面を開く</a>
+        </div>
+        <p id="status" class="status" role="status"></p>
+      </section>
+
+      <p class="note">このPagesサイト自体はPythonを実行しません。ダウンロードにはリポジトリへのActions実行権限が必要です。権利を持つ、またはダウンロードが許可されたコンテンツだけを利用してください。</p>
+    </main>
+    <script>
+      const form = document.querySelector("#download-form");
+      const result = document.querySelector("#result");
+      const command = document.querySelector("#command");
+      const status = document.querySelector("#status");
+      const copyButton = document.querySelector("#copy");
+
+      function shellQuote(value) {
+        return "'" + value.replaceAll("'", "'\\''") + "'";
+      }
+
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const url = new URL(form.elements.url.value);
+        if (!["http:", "https:"].includes(url.protocol)) {
+          form.elements.url.setCustomValidity("HTTPまたはHTTPSのURLを入力してください。");
+          form.elements.url.reportValidity();
+          return;
+        }
+        form.elements.url.setCustomValidity("");
+
+        const format = form.elements.format.value;
+        command.textContent = [
+          "gh workflow run download.yml --repo harutatukuba0919-hue/webdl --ref main",
+          "--field url=" + shellQuote(url.href),
+          "--field format=" + shellQuote(format),
+        ].join(" ");
+        result.hidden = false;
+        status.textContent = "";
+      });
+
+      copyButton.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(command.textContent);
+          status.textContent = "コマンドをコピーしました。";
+        } catch (error) {
+          status.textContent = "コピーできませんでした。コマンドを選択してコピーしてください。";
+        }
+      });
+    </script>
+  </body>
+</html>
